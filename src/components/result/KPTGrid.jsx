@@ -9,7 +9,7 @@ export default function KPTGrid({ kpt }) {
     <div className="section-card">
       <div className="section-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="section-num" style={{ background: 'var(--purple-dim)', color: 'var(--purple)' }}>4</div>
+          <div className="section-num section-num-purple">4</div>
           <span className="section-title">다음 소재 기획 방향</span>
           <span className="section-tag">팀 전체용</span>
         </div>

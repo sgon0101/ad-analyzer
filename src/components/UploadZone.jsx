@@ -39,10 +39,15 @@ export default function UploadZone({ type, file, url, onFile }) {
         onDrop={handleDrop}
       >
         <div className={`zone-label ${isHigh ? 'high' : 'low'}`}>
-          {isHigh ? '고성과 소재' : '저성과 소재'}
+          {isHigh ? '📈 고성과 소재' : '📉 저성과 소재'}
         </div>
-        <span className="zone-icon">{isHigh ? '📈' : '📉'}</span>
-        <div className="zone-sub">클릭하거나 파일을 드래그하세요</div>
+
+        {!hasFile && (
+          <>
+            <div className="zone-title">클릭하거나 파일을 드래그하세요</div>
+            <div className="zone-sub">이미지 · 영상 모두 지원</div>
+          </>
+        )}
 
         {url && isVideo && (
           <video
@@ -51,12 +56,12 @@ export default function UploadZone({ type, file, url, onFile }) {
             muted
             playsInline
             controls
-            style={{ maxHeight: 160 }}
+            style={{ maxHeight: 180 }}
             onClick={(e) => e.stopPropagation()}
           />
         )}
         {url && !isVideo && (
-          <img className="zone-preview" src={url} alt="preview" />
+          <img className="zone-preview" src={url} alt="preview" style={{ maxHeight: 180 }} />
         )}
         {file && (
           <div className="zone-filename">

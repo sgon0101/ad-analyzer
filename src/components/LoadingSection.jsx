@@ -12,10 +12,19 @@ export default function LoadingSection({ stepIndex }) {
       <div style={{ fontSize: 15, fontWeight: 500 }}>AI가 소재를 분석하고 있어요</div>
       <div className="loading-steps">
         {STEPS.map((text, i) => {
+          const isDone   = i < stepIndex
+          const isActive = i === stepIndex
           let cls = 'loading-step'
-          if (i < stepIndex) cls += ' done'
-          else if (i === stepIndex) cls += ' active'
-          return <div key={i} className={cls}>{text}</div>
+          if (isDone)   cls += ' done'
+          if (isActive) cls += ' active'
+          return (
+            <div key={i} className={cls}>
+              <span className="loading-step-icon">
+                {isDone ? '✓' : isActive ? '◉' : '○'}
+              </span>
+              {text}
+            </div>
+          )
         })}
       </div>
     </div>

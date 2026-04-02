@@ -143,6 +143,10 @@ export default function DonutSection({ items, selectedIdx, onSelectIdx }) {
 
   return (
     <div className="donut-section">
+      <div className="donut-section-header">
+        <span className="section-title">항목별 점수 분포</span>
+        <span className="section-tag">차트 클릭으로 항목 선택</span>
+      </div>
       <div className="donut-pair">
         <DonutColumn
           canvasRef={highRef}

@@ -16,15 +16,21 @@ function TriggerContent({ text }) {
 
 function ItemCard({ item }) {
   const [open, setOpen] = useState(false)
-  const c = COLORS[item.id]
+  const c  = COLORS[item.id]
   const sh = getStatus(item.score_high || 0)
-  const sl = getStatus(item.score_low || 0)
+  const sl = getStatus(item.score_low  || 0)
+  const gap = Math.abs((item.score_high || 0) - (item.score_low || 0))
 
   return (
-    <div className="item-card">
+    <div className={`item-card${gap >= 20 ? ' item-card-highlight' : ''}`}>
       <div className="item-header" onClick={() => setOpen(v => !v)}>
         <div className="item-id" style={{ background: c.bg, color: c.text }}>{item.id}</div>
         <span className="item-name">{item.label}</span>
+        <div className="item-score-chip">
+          <span className="item-score-num" style={{ color: 'var(--green)' }}>{item.score_high ?? '-'}</span>
+          <span className="item-score-vs">vs</span>
+          <span className="item-score-num" style={{ color: 'var(--red)' }}>{item.score_low ?? '-'}</span>
+        </div>
         <svg
           className={`chevron${open ? ' open' : ''}`}
           width={14} height={14} viewBox="0 0 14 14" fill="none"
@@ -91,11 +97,11 @@ export default function ItemCards({ items }) {
     <div className="section-card">
       <div className="section-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="section-num" style={{ background: 'var(--blue-dim)', color: 'var(--blue)' }}>2</div>
+          <div className="section-num section-num-blue">2</div>
           <span className="section-title">항목별 상세 분석</span>
           <span className="section-tag">실무자용</span>
         </div>
-        <span style={{ fontSize: 12, color: 'var(--text3)' }}>항목 클릭하여 펼치기</span>
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text3)' }}>클릭하여 펼치기</span>
       </div>
       {items.map(item => <ItemCard key={item.id} item={item} />)}
     </div>

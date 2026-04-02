@@ -9,10 +9,16 @@ export const COLORS = {
 };
 
 export function getStatus(s) {
-  if (s >= 75) return { label: '우수', color: '#3ecf8e', bg: 'rgba(62,207,142,0.12)' };
-  if (s >= 50) return { label: '보통', color: '#f5a623', bg: 'rgba(245,166,35,0.12)' };
-  return { label: '보완', color: '#f05252', bg: 'rgba(240,82,82,0.12)' };
+  if (s >= 75) return { label: '우수', color: '#3ecf8e', bg: 'rgba(62,207,142,0.12)', cssVar: 'green' };
+  if (s >= 50) return { label: '보통', color: '#f5a623', bg: 'rgba(245,166,35,0.12)', cssVar: 'amber' };
+  return         { label: '보완', color: '#f05252', bg: 'rgba(240,82,82,0.12)', cssVar: 'red' };
 }
+
+export const IMPACT_STYLE = {
+  '높음': { color: 'var(--red)',   bg: 'var(--red-dim)'   },
+  '중간': { color: 'var(--amber)', bg: 'var(--amber-dim)' },
+  '낮음': { color: 'var(--text2)', bg: 'var(--surface2)'  },
+};
 
 export function hexToRgba(hex, a) {
   const r = parseInt(hex.slice(1, 3), 16);
