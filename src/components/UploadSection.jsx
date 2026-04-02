@@ -9,7 +9,7 @@ export default function UploadSection({ fileHigh, fileHighUrl, fileLow, fileLowU
   return (
     <div>
       <div className="note-box">
-        ⚠️ 현재 버전은 <strong>이미지 파일</strong>을 지원해요 (JPG, PNG, GIF, WEBP). 영상 소재는 핵심 장면을 캡처해서 업로드해 주세요.
+        📎 <strong>이미지</strong>(JPG · PNG · GIF · WEBP)와 <strong>영상</strong>(MP4 · MOV · WEBM)을 모두 지원해요. 이미지는 Claude, 영상 포함 시 Gemini로 자동 분석합니다.
       </div>
       <div className="upload-grid">
         <UploadZone type="high" file={fileHigh} url={fileHighUrl} onFile={onFileHigh} />

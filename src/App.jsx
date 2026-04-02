@@ -29,6 +29,8 @@ export default function App() {
     setUrlLow(URL.createObjectURL(file))
   }
 
+  const hasVideo = fileHigh?.type?.startsWith('video/') || fileLow?.type?.startsWith('video/')
+
   async function startAnalysis() {
     setError(null)
     setStepIndex(0)
@@ -39,17 +41,19 @@ export default function App() {
     }, 1800)
 
     try {
-      const [imageHigh, imageLow] = await Promise.all([toBase64(fileHigh), toBase64(fileLow)])
+      const [dataHigh, dataLow] = await Promise.all([toBase64(fileHigh), toBase64(fileLow)])
 
-      const resp = await fetch('/api/analyze', {
+      const endpoint = hasVideo ? '/api/analyze-video' : '/api/analyze'
+
+      // 이미지 전용 라우트는 기존 키 이름 유지
+      const body = hasVideo
+        ? { fileHigh: dataHigh, fileLow: dataLow, mediaTypeHigh: fileHigh.type, mediaTypeLow: fileLow.type }
+        : { imageHigh: dataHigh, imageLow: dataLow, mediaTypeHigh: fileHigh.type || 'image/jpeg', mediaTypeLow: fileLow.type || 'image/jpeg' }
+
+      const resp = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageHigh,
-          imageLow,
-          mediaTypeHigh: fileHigh.type || 'image/jpeg',
-          mediaTypeLow:  fileLow.type  || 'image/jpeg',
-        }),
+        body: JSON.stringify(body),
       })
 
       const data = await resp.json()

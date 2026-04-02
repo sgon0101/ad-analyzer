@@ -1,11 +1,14 @@
 import { useRef, useState } from 'react'
 
+const ACCEPT = 'image/*,video/mp4,video/quicktime,video/webm,video/x-msvideo'
+
 export default function UploadZone({ type, file, url, onFile }) {
   const inputRef = useRef(null)
   const [dragOver, setDragOver] = useState(false)
 
-  const isHigh = type === 'high'
+  const isHigh  = type === 'high'
   const hasFile = !!file
+  const isVideo = file?.type?.startsWith('video/')
 
   function handleFileChange(e) {
     const f = e.target.files?.[0]
@@ -16,7 +19,7 @@ export default function UploadZone({ type, file, url, onFile }) {
     e.preventDefault()
     setDragOver(false)
     const f = e.dataTransfer.files?.[0]
-    if (f && f.type.startsWith('image/')) onFile(f)
+    if (f && (f.type.startsWith('image/') || f.type.startsWith('video/'))) onFile(f)
   }
 
   const zoneClass = [
@@ -40,13 +43,31 @@ export default function UploadZone({ type, file, url, onFile }) {
         </div>
         <span className="zone-icon">{isHigh ? '📈' : '📉'}</span>
         <div className="zone-sub">클릭하거나 파일을 드래그하세요</div>
-        {url && <img className="zone-preview" src={url} alt="preview" />}
-        {file && <div className="zone-filename">{file.name}</div>}
+
+        {url && isVideo && (
+          <video
+            className="zone-preview"
+            src={url}
+            muted
+            playsInline
+            controls
+            style={{ maxHeight: 160 }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
+        {url && !isVideo && (
+          <img className="zone-preview" src={url} alt="preview" />
+        )}
+        {file && (
+          <div className="zone-filename">
+            {isVideo && '🎬 '}{file.name}
+          </div>
+        )}
       </div>
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept={ACCEPT}
         style={{ display: 'none' }}
         onChange={handleFileChange}
       />
