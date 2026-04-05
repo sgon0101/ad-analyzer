@@ -34,21 +34,27 @@ async function uploadToCloudinary(base64Data, mimeType) {
   return res.json()
 }
 
-// ── 장면 전환 시점 프레임 추출 (최대 10개) ────────────────────────────────────
+// ── 장면 전환 시점 프레임 추출 (최대 6개, 640px·q60 압축) ────────────────────
 async function extractSceneFrames(cloudName, publicId, duration) {
-  const count = Math.min(10, Math.max(3, Math.ceil(duration / 3)))
+  const count = Math.min(6, Math.max(3, Math.ceil(duration / 5)))
   const timestamps = Array.from({ length: count }, (_, i) =>
-    parseFloat(((( i + 0.5) / count) * duration).toFixed(2))
+    parseFloat((((i + 0.5) / count) * duration).toFixed(2))
   )
 
   const frames = await Promise.all(timestamps.map(async (t) => {
-    const url = `https://res.cloudinary.com/${cloudName}/video/upload/so_${t},w_640,h_360,c_fill/${publicId}.jpg`
+    const url = `https://res.cloudinary.com/${cloudName}/video/upload/so_${t},w_640,h_360,c_fill,q_60/${publicId}.jpg`
     const res = await fetch(url)
     if (!res.ok) return null
-    return Buffer.from(await res.arrayBuffer()).toString('base64')
+    const buf = Buffer.from(await res.arrayBuffer())
+    const b64 = buf.toString('base64')
+    console.log(`[frame so_${t}] ${(buf.length / 1024).toFixed(1)} KB  →  base64 ${(b64.length / 1024).toFixed(1)} KB`)
+    return b64
   }))
 
-  return frames.filter(Boolean)
+  const filtered = frames.filter(Boolean)
+  const totalKB = filtered.reduce((sum, f) => sum + f.length / 1024, 0)
+  console.log(`[frames total] ${filtered.length}개  총 base64 ${totalKB.toFixed(1)} KB`)
+  return filtered
 }
 
 // ── 핸들러 ───────────────────────────────────────────────────────────────────
