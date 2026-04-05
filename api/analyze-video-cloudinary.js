@@ -1,47 +1,18 @@
-import { createHash } from 'crypto'
-
 export const config = {
   api: {
-    bodyParser: { sizeLimit: '100mb' },
+    bodyParser: { sizeLimit: '10mb' }, // 영상은 클라이언트에서 직접 업로드 → 이미지 base64만 수신
   },
 }
 
-// ── Cloudinary 업로드 ─────────────────────────────────────────────────────────
-async function uploadToCloudinary(base64Data, mimeType) {
-  const cloudName  = process.env.CLOUDINARY_CLOUD_NAME
-  const apiKey     = process.env.CLOUDINARY_API_KEY
-  const apiSecret  = process.env.CLOUDINARY_API_SECRET
-
-  const timestamp = Math.round(Date.now() / 1000)
-  const signature = createHash('sha1')
-    .update(`timestamp=${timestamp}${apiSecret}`)
-    .digest('hex')
-
-  const formData = new FormData()
-  formData.append('file',      `data:${mimeType};base64,${base64Data}`)
-  formData.append('api_key',   apiKey)
-  formData.append('timestamp', String(timestamp))
-  formData.append('signature', signature)
-
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/video/upload`, {
-    method: 'POST',
-    body: formData,
-  })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.error?.message || `Cloudinary 업로드 실패 (${res.status})`)
-  }
-  return res.json()
-}
-
-// ── 장면 전환 시점 프레임 URL 생성 (최대 6개, Vercel 통과 없음) ──────────────
+// ── 장면 전환 시점 프레임 URL 생성 (Vercel 통과 없음) ─────────────────────────
 function buildSceneFrameUrls(cloudName, publicId, duration) {
   const count = Math.min(6, Math.max(3, Math.ceil(duration / 5)))
   const urls = Array.from({ length: count }, (_, i) => {
     const t = parseFloat((((i + 0.5) / count) * duration).toFixed(2))
     return `https://res.cloudinary.com/${cloudName}/video/upload/so_${t},w_640,h_360,c_fill,q_60/${publicId}.jpg`
   })
-  console.log(`[frames] ${urls.length}개 URL 생성 (duration ${duration}s)\n` + urls.join('\n'))
+  console.log(`[buildSceneFrameUrls] publicId=${publicId} duration=${duration}s → ${urls.length}개 URL`)
+  urls.forEach((u, i) => console.log(`  [${i}] ${u}`))
   return urls
 }
 
@@ -49,34 +20,54 @@ function buildSceneFrameUrls(cloudName, publicId, duration) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
+  // ── 요청 크기 측정 ────────────────────────────────────────────────────────
+  const bodyStr    = JSON.stringify(req.body)
+  const bodySizeKB = (Buffer.byteLength(bodyStr, 'utf8') / 1024).toFixed(1)
+  console.log(`[analyze-video-cloudinary] 요청 수신 — body ${bodySizeKB} KB`)
+
   const anthropicKey = process.env.ANTHROPIC_API_KEY
   const cloudName    = process.env.CLOUDINARY_CLOUD_NAME
-  const cloudApiKey  = process.env.CLOUDINARY_API_KEY
-  const cloudSecret  = process.env.CLOUDINARY_API_SECRET
 
-  if (!anthropicKey)                          return res.status(500).json({ error: 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았어요.' })
-  if (!cloudName || !cloudApiKey || !cloudSecret) return res.status(500).json({ error: 'Cloudinary 환경변수가 설정되지 않았어요.' })
+  if (!anthropicKey) {
+    console.error('[analyze-video-cloudinary] ANTHROPIC_API_KEY 누락')
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았어요.' })
+  }
+  if (!cloudName) {
+    console.error('[analyze-video-cloudinary] CLOUDINARY_CLOUD_NAME 누락')
+    return res.status(500).json({ error: 'CLOUDINARY_CLOUD_NAME 환경변수가 설정되지 않았어요.' })
+  }
 
   try {
-    const { fileHigh, fileLow, mediaTypeHigh, mediaTypeLow } = req.body
+    const {
+      publicIdHigh, durationHigh,   // 영상일 때 (클라이언트에서 Cloudinary 직접 업로드)
+      publicIdLow,  durationLow,
+      base64High,   base64Low,       // 이미지일 때
+      mediaTypeHigh, mediaTypeLow,
+    } = req.body
 
     const isVideoHigh = mediaTypeHigh?.startsWith('video/')
     const isVideoLow  = mediaTypeLow?.startsWith('video/')
 
-    // 파일 처리: 영상이면 Cloudinary 업로드 후 프레임 URL 생성, 이미지면 base64 그대로
-    async function processFile(base64Data, mimeType, isVideo) {
-      if (!isVideo) return { urls: null, base64: base64Data, mimeType, isVideo: false }
-      const upload = await uploadToCloudinary(base64Data, mimeType)
-      const urls   = buildSceneFrameUrls(cloudName, upload.public_id, upload.duration || 30)
-      return { urls, base64: null, mimeType: 'image/jpeg', isVideo: true, frameCount: urls.length }
+    console.log(`[analyze-video-cloudinary] isVideoHigh=${isVideoHigh} isVideoLow=${isVideoLow}`)
+    console.log(`[analyze-video-cloudinary] publicIdHigh=${publicIdHigh} durationHigh=${durationHigh}`)
+    console.log(`[analyze-video-cloudinary] publicIdLow=${publicIdLow}  durationLow=${durationLow}`)
+
+    // ── 파일 처리 ─────────────────────────────────────────────────────────
+    function processFile(publicId, duration, base64, mimeType, isVideo) {
+      if (isVideo) {
+        if (!publicId) throw new Error(`영상 publicId가 없습니다 (mediaType: ${mimeType})`)
+        const urls = buildSceneFrameUrls(cloudName, publicId, duration || 30)
+        return { urls, base64: null, mimeType: 'image/jpeg', isVideo: true, frameCount: urls.length }
+      }
+      if (!base64) throw new Error(`이미지 base64 데이터가 없습니다 (mediaType: ${mimeType})`)
+      console.log(`[processFile] 이미지 base64 크기 ${(base64.length / 1024).toFixed(1)} KB`)
+      return { urls: null, base64, mimeType: mimeType || 'image/jpeg', isVideo: false }
     }
 
-    const [high, low] = await Promise.all([
-      processFile(fileHigh, mediaTypeHigh || 'image/jpeg', isVideoHigh),
-      processFile(fileLow,  mediaTypeLow  || 'image/jpeg', isVideoLow),
-    ])
+    const high = processFile(publicIdHigh, durationHigh, base64High, mediaTypeHigh, isVideoHigh)
+    const low  = processFile(publicIdLow,  durationLow,  base64Low,  mediaTypeLow,  isVideoLow)
 
-    // ── Claude 메시지 구성 ──────────────────────────────────────────────────
+    // ── Claude 메시지 구성 ────────────────────────────────────────────────
     const contentParts = []
 
     const videoNote = (isVideoHigh || isVideoLow)
@@ -88,29 +79,20 @@ export default async function handler(req, res) {
 
     contentParts.push({ type: 'text', text: `=== ${highLabel} ===` })
     if (high.isVideo) {
-      high.urls.forEach(url => contentParts.push({
-        type: 'image',
-        source: { type: 'url', url },
-      }))
+      high.urls.forEach(url => contentParts.push({ type: 'image', source: { type: 'url', url } }))
     } else {
-      contentParts.push({
-        type: 'image',
-        source: { type: 'base64', media_type: high.mimeType, data: high.base64 },
-      })
+      contentParts.push({ type: 'image', source: { type: 'base64', media_type: high.mimeType, data: high.base64 } })
     }
 
     contentParts.push({ type: 'text', text: `=== ${lowLabel} ===` })
     if (low.isVideo) {
-      low.urls.forEach(url => contentParts.push({
-        type: 'image',
-        source: { type: 'url', url },
-      }))
+      low.urls.forEach(url => contentParts.push({ type: 'image', source: { type: 'url', url } }))
     } else {
-      contentParts.push({
-        type: 'image',
-        source: { type: 'base64', media_type: low.mimeType, data: low.base64 },
-      })
+      contentParts.push({ type: 'image', source: { type: 'base64', media_type: low.mimeType, data: low.base64 } })
     }
+
+    const imagePartCount = contentParts.filter(p => p.type === 'image').length
+    console.log(`[analyze-video-cloudinary] Claude 전달 이미지 파트 ${imagePartCount}개`)
 
     const systemPrompt = `당신은 퍼포먼스 마케팅 크리에이티브 전략 전문가입니다.
 행동경제학, 소비자 심리학, 마케팅 이론을 광고 소재 분석에 실제로 적용합니다.
@@ -145,6 +127,8 @@ G.소재피로도&지속력: 반복 노출 시 효율 하락 예상
 
     contentParts.push({ type: 'text', text: userPrompt })
 
+    console.log(`[analyze-video-cloudinary] Claude API 호출 시작 (model: claude-sonnet-4-20250514)`)
+
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -161,23 +145,38 @@ G.소재피로도&지속력: 반복 노출 시 효율 하락 예상
     })
 
     const claudeData = await claudeRes.json()
-    if (!claudeRes.ok) throw new Error(claudeData.error?.message || `Claude API 오류 (${claudeRes.status})`)
+    console.log(`[analyze-video-cloudinary] Claude 응답 status=${claudeRes.status} stop_reason=${claudeData.stop_reason}`)
+
+    if (!claudeRes.ok) {
+      console.error('[analyze-video-cloudinary] Claude API 오류:', JSON.stringify(claudeData))
+      throw new Error(claudeData.error?.message || `Claude API 오류 (${claudeRes.status})`)
+    }
 
     const rawText = claudeData.content?.[0]?.text || ''
+    console.log(`[analyze-video-cloudinary] Claude 응답 텍스트 길이: ${rawText.length}자`)
+
     let raw = rawText.replace(/```json\s*/gi, '').replace(/```\s*/g, '')
     const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('AI 응답에서 JSON을 찾을 수 없어요. 다시 시도해 주세요.')
+    if (!jsonMatch) {
+      console.error('[analyze-video-cloudinary] JSON 파싱 실패. 원문:', rawText.slice(0, 300))
+      throw new Error('AI 응답에서 JSON을 찾을 수 없어요. 다시 시도해 주세요.')
+    }
     raw = jsonMatch[0]
 
     let result
     try {
       result = JSON.parse(raw)
-    } catch {
+    } catch (parseErr) {
+      console.warn('[analyze-video-cloudinary] JSON.parse 1차 실패, 제어문자 제거 후 재시도:', parseErr.message)
       result = JSON.parse(raw.replace(/[\u0000-\u001F\u007F]/g, ' '))
     }
 
+    console.log(`[analyze-video-cloudinary] 분석 완료 — items ${result?.items?.length}개`)
     return res.status(200).json(result)
+
   } catch (err) {
+    console.error('[analyze-video-cloudinary] 처리 중 오류:', err.message)
+    console.error(err.stack)
     return res.status(500).json({ error: err.message || '분석 중 오류가 발생했어요.' })
   }
 }

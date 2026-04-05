@@ -5,17 +5,17 @@ import LoadingSection from './components/LoadingSection.jsx'
 import ResultSection from './components/result/ResultSection.jsx'
 import { toBase64 } from './constants.js'
 
-const PHASE = { UPLOAD: 'upload', LOADING: 'loading', RESULT: 'result' }
+const PHASE = { UPLOAD: 'upload', UPLOADING: 'uploading', LOADING: 'loading', RESULT: 'result' }
 
 export default function App() {
-  const [phase, setPhase] = useState(PHASE.UPLOAD)
-  const [fileHigh, setFileHigh] = useState(null)
-  const [fileLow, setFileLow]   = useState(null)
-  const [urlHigh, setUrlHigh]   = useState(null)
-  const [urlLow, setUrlLow]     = useState(null)
-  const [result, setResult]     = useState(null)
-  const [error, setError]       = useState(null)
-  const [stepIndex, setStepIndex] = useState(0)
+  const [phase, setPhase]           = useState(PHASE.UPLOAD)
+  const [fileHigh, setFileHigh]     = useState(null)
+  const [fileLow, setFileLow]       = useState(null)
+  const [urlHigh, setUrlHigh]       = useState(null)
+  const [urlLow, setUrlLow]         = useState(null)
+  const [result, setResult]         = useState(null)
+  const [error, setError]           = useState(null)
+  const [stepIndex, setStepIndex]   = useState(0)
   const stepTimer = useRef(null)
 
   function handleFileHigh(file) {
@@ -31,28 +31,91 @@ export default function App() {
 
   const hasVideo = fileHigh?.type?.startsWith('video/') || fileLow?.type?.startsWith('video/')
 
+  // ── 영상 → Cloudinary 직접 업로드 (Vercel 통과 없음) ──────────────────────
+  async function uploadVideoToCloudinary(file, sig) {
+    const form = new FormData()
+    form.append('file',      file)
+    form.append('api_key',   sig.apiKey)
+    form.append('timestamp', String(sig.timestamp))
+    form.append('signature', sig.signature)
+
+    const res = await fetch(
+      `https://api.cloudinary.com/v1_1/${sig.cloudName}/video/upload`,
+      { method: 'POST', body: form }
+    )
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.error?.message || `Cloudinary 업로드 실패 (${res.status})`)
+    }
+    return res.json()
+  }
+
   async function startAnalysis() {
     setError(null)
     setStepIndex(0)
+
+    const isVideoHigh = fileHigh?.type?.startsWith('video/')
+    const isVideoLow  = fileLow?.type?.startsWith('video/')
+
+    let body
+
+    if (isVideoHigh || isVideoLow) {
+      // ── Phase 1: 영상 직접 업로드 ────────────────────────────────────────
+      setPhase(PHASE.UPLOADING)
+
+      try {
+        const sigRes = await fetch('/api/cloudinary-signature')
+        if (!sigRes.ok) {
+          const e = await sigRes.json()
+          throw new Error(e.error || 'Cloudinary 서명 발급 실패')
+        }
+        const sig = await sigRes.json()
+
+        const [uploadHigh, uploadLow] = await Promise.all([
+          isVideoHigh ? uploadVideoToCloudinary(fileHigh, sig) : null,
+          isVideoLow  ? uploadVideoToCloudinary(fileLow,  sig) : null,
+        ])
+
+        const [b64High, b64Low] = await Promise.all([
+          isVideoHigh ? null : toBase64(fileHigh),
+          isVideoLow  ? null : toBase64(fileLow),
+        ])
+
+        body = {
+          publicIdHigh:  uploadHigh?.public_id  ?? null,
+          durationHigh:  uploadHigh?.duration   ?? null,
+          publicIdLow:   uploadLow?.public_id   ?? null,
+          durationLow:   uploadLow?.duration    ?? null,
+          base64High:    b64High,
+          base64Low:     b64Low,
+          mediaTypeHigh: fileHigh.type,
+          mediaTypeLow:  fileLow.type,
+        }
+      } catch (err) {
+        setError('업로드 오류: ' + err.message)
+        setPhase(PHASE.UPLOAD)
+        return
+      }
+    } else {
+      // ── 이미지: 기존 flow ─────────────────────────────────────────────────
+      const [dataHigh, dataLow] = await Promise.all([toBase64(fileHigh), toBase64(fileLow)])
+      body = {
+        imageHigh:    dataHigh,
+        imageLow:     dataLow,
+        mediaTypeHigh: fileHigh.type || 'image/jpeg',
+        mediaTypeLow:  fileLow.type  || 'image/jpeg',
+      }
+    }
+
+    // ── Phase 2: 분석 ────────────────────────────────────────────────────────
     setPhase(PHASE.LOADING)
 
-    const maxStep       = hasVideo ? 4 : 3
-    const completedStep = hasVideo ? 5 : 4
-
     stepTimer.current = setInterval(() => {
-      setStepIndex(prev => Math.min(prev + 1, maxStep))
+      setStepIndex(prev => Math.min(prev + 1, 3))
     }, 1800)
 
     try {
-      const [dataHigh, dataLow] = await Promise.all([toBase64(fileHigh), toBase64(fileLow)])
-
       const endpoint = hasVideo ? '/api/analyze-video-cloudinary' : '/api/analyze'
-
-      // 이미지 전용 라우트는 기존 키 이름 유지
-      const body = hasVideo
-        ? { fileHigh: dataHigh, fileLow: dataLow, mediaTypeHigh: fileHigh.type, mediaTypeLow: fileLow.type }
-        : { imageHigh: dataHigh, imageLow: dataLow, mediaTypeHigh: fileHigh.type || 'image/jpeg', mediaTypeLow: fileLow.type || 'image/jpeg' }
-
       const resp = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,7 +126,7 @@ export default function App() {
       if (!resp.ok) throw new Error(data.error || `API 오류 (${resp.status})`)
 
       clearInterval(stepTimer.current)
-      setStepIndex(completedStep)
+      setStepIndex(4)
       setTimeout(() => {
         setResult(data)
         setPhase(PHASE.RESULT)
@@ -101,6 +164,15 @@ export default function App() {
           onAnalyze={startAnalysis}
           error={error}
         />
+      )}
+      {phase === PHASE.UPLOADING && (
+        <div className="loading">
+          <div className="loading-spinner" />
+          <div style={{ fontSize: 15, fontWeight: 500 }}>영상을 Cloudinary에 업로드 중...</div>
+          <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 8 }}>
+            영상이 클라우드로 직접 전송됩니다. 파일 크기에 따라 시간이 소요될 수 있어요.
+          </div>
+        </div>
       )}
       {phase === PHASE.LOADING && <LoadingSection stepIndex={stepIndex} hasVideo={hasVideo} />}
       {phase === PHASE.RESULT && result && (
