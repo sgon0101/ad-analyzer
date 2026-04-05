@@ -13,20 +13,47 @@ export default function App() {
   const [fileLow, setFileLow]       = useState(null)
   const [urlHigh, setUrlHigh]       = useState(null)
   const [urlLow, setUrlLow]         = useState(null)
+  const [thumbHigh, setThumbHigh]   = useState(null)
+  const [thumbLow, setThumbLow]     = useState(null)
   const [result, setResult]         = useState(null)
   const [error, setError]           = useState(null)
   const [stepIndex, setStepIndex]   = useState(0)
   const stepTimer = useRef(null)
 
+  // 영상 파일에서 첫 프레임을 캔버스로 캡처 (로컬, Cloudinary 업로드 전 즉시 미리보기용)
+  function captureVideoThumb(file) {
+    return new Promise((resolve) => {
+      const video   = document.createElement('video')
+      const blobUrl = URL.createObjectURL(file)
+      video.src        = blobUrl
+      video.muted      = true
+      video.playsInline = true
+      video.onloadedmetadata = () => { video.currentTime = 0.1 }
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width  = Math.min(video.videoWidth, 640)
+        canvas.height = Math.round(video.videoHeight * (canvas.width / video.videoWidth))
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.8))
+        URL.revokeObjectURL(blobUrl)
+      }
+      video.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(null) }
+    })
+  }
+
   function handleFileHigh(file) {
     if (urlHigh) URL.revokeObjectURL(urlHigh)
     setFileHigh(file)
     setUrlHigh(URL.createObjectURL(file))
+    setThumbHigh(null)
+    if (file.type.startsWith('video/')) captureVideoThumb(file).then(t => setThumbHigh(t))
   }
   function handleFileLow(file) {
     if (urlLow) URL.revokeObjectURL(urlLow)
     setFileLow(file)
     setUrlLow(URL.createObjectURL(file))
+    setThumbLow(null)
+    if (file.type.startsWith('video/')) captureVideoThumb(file).then(t => setThumbLow(t))
   }
 
   const hasVideo = fileHigh?.type?.startsWith('video/') || fileLow?.type?.startsWith('video/')
@@ -75,6 +102,10 @@ export default function App() {
           isVideoHigh ? uploadVideoToCloudinary(fileHigh, sig) : null,
           isVideoLow  ? uploadVideoToCloudinary(fileLow,  sig) : null,
         ])
+
+        // Cloudinary 업로드 완료 → 정식 썸네일 URL로 교체
+        if (uploadHigh) setThumbHigh(`https://res.cloudinary.com/${sig.cloudName}/video/upload/so_0/${uploadHigh.public_id}.jpg`)
+        if (uploadLow)  setThumbLow(`https://res.cloudinary.com/${sig.cloudName}/video/upload/so_0/${uploadLow.public_id}.jpg`)
 
         const [b64High, b64Low] = await Promise.all([
           isVideoHigh ? null : toBase64(fileHigh),
@@ -144,6 +175,7 @@ export default function App() {
     if (urlLow)  URL.revokeObjectURL(urlLow)
     setFileHigh(null); setFileLow(null)
     setUrlHigh(null);  setUrlLow(null)
+    setThumbHigh(null); setThumbLow(null)
     setResult(null); setError(null)
     setStepIndex(0)
     setPhase(PHASE.UPLOAD)
@@ -157,8 +189,8 @@ export default function App() {
       <Header />
       {phase === PHASE.UPLOAD && (
         <UploadSection
-          fileHigh={fileHigh} fileHighUrl={urlHigh}
-          fileLow={fileLow}   fileLowUrl={urlLow}
+          fileHigh={fileHigh} fileHighUrl={urlHigh} thumbHigh={thumbHigh}
+          fileLow={fileLow}   fileLowUrl={urlLow}   thumbLow={thumbLow}
           onFileHigh={handleFileHigh}
           onFileLow={handleFileLow}
           onAnalyze={startAnalysis}
@@ -180,6 +212,8 @@ export default function App() {
           result={result}
           urlHigh={urlHigh}
           urlLow={urlLow}
+          thumbHigh={thumbHigh}
+          thumbLow={thumbLow}
           onReset={resetAll}
         />
       )}

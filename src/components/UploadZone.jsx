@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 
 const ACCEPT = 'image/*,video/mp4,video/quicktime,video/webm,video/x-msvideo'
 
-export default function UploadZone({ type, file, url, onFile }) {
+export default function UploadZone({ type, file, url, thumb, onFile }) {
   const inputRef = useRef(null)
   const [dragOver, setDragOver] = useState(false)
 
@@ -50,15 +50,9 @@ export default function UploadZone({ type, file, url, onFile }) {
         )}
 
         {url && isVideo && (
-          <video
-            className="zone-preview"
-            src={url}
-            muted
-            playsInline
-            controls
-            style={{ maxHeight: 180 }}
-            onClick={(e) => e.stopPropagation()}
-          />
+          thumb
+            ? <img className="zone-preview" src={thumb} alt="preview" style={{ maxHeight: 180 }} />
+            : <video className="zone-preview" src={url} muted playsInline controls style={{ maxHeight: 180 }} onClick={(e) => e.stopPropagation()} />
         )}
         {url && !isVideo && (
           <img className="zone-preview" src={url} alt="preview" style={{ maxHeight: 180 }} />

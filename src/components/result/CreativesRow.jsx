@@ -1,6 +1,6 @@
 import { getStatus } from '../../constants.js'
 
-export default function CreativesRow({ urlHigh, urlLow, avgHigh, avgLow }) {
+export default function CreativesRow({ urlHigh, urlLow, thumbHigh, thumbLow, avgHigh, avgLow }) {
   const sh = getStatus(avgHigh)
   const sl = getStatus(avgLow)
 
@@ -16,7 +16,7 @@ export default function CreativesRow({ urlHigh, urlLow, avgHigh, avgLow }) {
             종합 {avgHigh}점
           </span>
         </div>
-        <img src={urlHigh} alt="고성과 소재" />
+        <img src={thumbHigh ?? urlHigh} alt="고성과 소재" />
       </div>
       <div className="creative-card">
         <div className="creative-card-header">
@@ -28,7 +28,7 @@ export default function CreativesRow({ urlHigh, urlLow, avgHigh, avgLow }) {
             종합 {avgLow}점
           </span>
         </div>
-        <img src={urlLow} alt="저성과 소재" />
+        <img src={thumbLow ?? urlLow} alt="저성과 소재" />
       </div>
     </div>
   )
