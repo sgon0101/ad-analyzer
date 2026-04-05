@@ -34,27 +34,15 @@ async function uploadToCloudinary(base64Data, mimeType) {
   return res.json()
 }
 
-// ── 장면 전환 시점 프레임 추출 (최대 6개, 640px·q60 압축) ────────────────────
-async function extractSceneFrames(cloudName, publicId, duration) {
+// ── 장면 전환 시점 프레임 URL 생성 (최대 6개, Vercel 통과 없음) ──────────────
+function buildSceneFrameUrls(cloudName, publicId, duration) {
   const count = Math.min(6, Math.max(3, Math.ceil(duration / 5)))
-  const timestamps = Array.from({ length: count }, (_, i) =>
-    parseFloat((((i + 0.5) / count) * duration).toFixed(2))
-  )
-
-  const frames = await Promise.all(timestamps.map(async (t) => {
-    const url = `https://res.cloudinary.com/${cloudName}/video/upload/so_${t},w_640,h_360,c_fill,q_60/${publicId}.jpg`
-    const res = await fetch(url)
-    if (!res.ok) return null
-    const buf = Buffer.from(await res.arrayBuffer())
-    const b64 = buf.toString('base64')
-    console.log(`[frame so_${t}] ${(buf.length / 1024).toFixed(1)} KB  →  base64 ${(b64.length / 1024).toFixed(1)} KB`)
-    return b64
-  }))
-
-  const filtered = frames.filter(Boolean)
-  const totalKB = filtered.reduce((sum, f) => sum + f.length / 1024, 0)
-  console.log(`[frames total] ${filtered.length}개  총 base64 ${totalKB.toFixed(1)} KB`)
-  return filtered
+  const urls = Array.from({ length: count }, (_, i) => {
+    const t = parseFloat((((i + 0.5) / count) * duration).toFixed(2))
+    return `https://res.cloudinary.com/${cloudName}/video/upload/so_${t},w_640,h_360,c_fill,q_60/${publicId}.jpg`
+  })
+  console.log(`[frames] ${urls.length}개 URL 생성 (duration ${duration}s)\n` + urls.join('\n'))
+  return urls
 }
 
 // ── 핸들러 ───────────────────────────────────────────────────────────────────
@@ -75,12 +63,12 @@ export default async function handler(req, res) {
     const isVideoHigh = mediaTypeHigh?.startsWith('video/')
     const isVideoLow  = mediaTypeLow?.startsWith('video/')
 
-    // 파일 처리: 영상이면 Cloudinary 업로드 후 장면 프레임 추출, 이미지면 그대로 사용
+    // 파일 처리: 영상이면 Cloudinary 업로드 후 프레임 URL 생성, 이미지면 base64 그대로
     async function processFile(base64Data, mimeType, isVideo) {
-      if (!isVideo) return { frames: [base64Data], mimeType, isVideo: false }
-      const upload  = await uploadToCloudinary(base64Data, mimeType)
-      const frames  = await extractSceneFrames(cloudName, upload.public_id, upload.duration || 30)
-      return { frames, mimeType: 'image/jpeg', isVideo: true, frameCount: frames.length }
+      if (!isVideo) return { urls: null, base64: base64Data, mimeType, isVideo: false }
+      const upload = await uploadToCloudinary(base64Data, mimeType)
+      const urls   = buildSceneFrameUrls(cloudName, upload.public_id, upload.duration || 30)
+      return { urls, base64: null, mimeType: 'image/jpeg', isVideo: true, frameCount: urls.length }
     }
 
     const [high, low] = await Promise.all([
@@ -99,16 +87,30 @@ export default async function handler(req, res) {
     const lowLabel  = isVideoLow  ? `저성과 영상 소재 (장면 프레임 ${low.frameCount}개)`  : '저성과 이미지 소재'
 
     contentParts.push({ type: 'text', text: `=== ${highLabel} ===` })
-    high.frames.forEach(frame => contentParts.push({
-      type: 'image',
-      source: { type: 'base64', media_type: high.mimeType, data: frame },
-    }))
+    if (high.isVideo) {
+      high.urls.forEach(url => contentParts.push({
+        type: 'image',
+        source: { type: 'url', url },
+      }))
+    } else {
+      contentParts.push({
+        type: 'image',
+        source: { type: 'base64', media_type: high.mimeType, data: high.base64 },
+      })
+    }
 
     contentParts.push({ type: 'text', text: `=== ${lowLabel} ===` })
-    low.frames.forEach(frame => contentParts.push({
-      type: 'image',
-      source: { type: 'base64', media_type: low.mimeType, data: frame },
-    }))
+    if (low.isVideo) {
+      low.urls.forEach(url => contentParts.push({
+        type: 'image',
+        source: { type: 'url', url },
+      }))
+    } else {
+      contentParts.push({
+        type: 'image',
+        source: { type: 'base64', media_type: low.mimeType, data: low.base64 },
+      })
+    }
 
     const systemPrompt = `당신은 퍼포먼스 마케팅 크리에이티브 전략 전문가입니다.
 행동경제학, 소비자 심리학, 마케팅 이론을 광고 소재 분석에 실제로 적용합니다.
