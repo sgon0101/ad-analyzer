@@ -36,14 +36,17 @@ export default function App() {
     setStepIndex(0)
     setPhase(PHASE.LOADING)
 
+    const maxStep       = hasVideo ? 4 : 3
+    const completedStep = hasVideo ? 5 : 4
+
     stepTimer.current = setInterval(() => {
-      setStepIndex(prev => Math.min(prev + 1, 3))
+      setStepIndex(prev => Math.min(prev + 1, maxStep))
     }, 1800)
 
     try {
       const [dataHigh, dataLow] = await Promise.all([toBase64(fileHigh), toBase64(fileLow)])
 
-      const endpoint = hasVideo ? '/api/analyze-video' : '/api/analyze'
+      const endpoint = hasVideo ? '/api/analyze-video-cloudinary' : '/api/analyze'
 
       // 이미지 전용 라우트는 기존 키 이름 유지
       const body = hasVideo
@@ -60,7 +63,7 @@ export default function App() {
       if (!resp.ok) throw new Error(data.error || `API 오류 (${resp.status})`)
 
       clearInterval(stepTimer.current)
-      setStepIndex(4)
+      setStepIndex(completedStep)
       setTimeout(() => {
         setResult(data)
         setPhase(PHASE.RESULT)
@@ -99,7 +102,7 @@ export default function App() {
           error={error}
         />
       )}
-      {phase === PHASE.LOADING && <LoadingSection stepIndex={stepIndex} />}
+      {phase === PHASE.LOADING && <LoadingSection stepIndex={stepIndex} hasVideo={hasVideo} />}
       {phase === PHASE.RESULT && result && (
         <ResultSection
           result={result}

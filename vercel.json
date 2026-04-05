@@ -2,6 +2,9 @@
   "functions": {
     "api/analyze-video.js": {
       "maxDuration": 60
+    },
+    "api/analyze-video-cloudinary.js": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
