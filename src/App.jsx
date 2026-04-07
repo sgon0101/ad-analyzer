@@ -165,7 +165,7 @@ export default function App() {
       }, 500)
     } catch (err) {
       clearInterval(stepTimer.current)
-      setError('오류: ' + err.message + ' — API 키와 크레딧을 확인해 주세요.')
+      setError('오류: ' + err.message)
       setPhase(PHASE.UPLOAD)
     }
   }
