@@ -3,7 +3,7 @@ import Header from './components/Header.jsx'
 import UploadSection from './components/UploadSection.jsx'
 import LoadingSection from './components/LoadingSection.jsx'
 import ResultSection from './components/result/ResultSection.jsx'
-import { toBase64 } from './constants.js'
+import { compressImage } from './constants.js'
 
 const PHASE = { UPLOAD: 'upload', UPLOADING: 'uploading', LOADING: 'loading', RESULT: 'result' }
 
@@ -108,8 +108,8 @@ export default function App() {
         if (uploadLow)  setThumbLow(`https://res.cloudinary.com/${sig.cloudName}/video/upload/so_0/${uploadLow.public_id}.jpg`)
 
         const [b64High, b64Low] = await Promise.all([
-          isVideoHigh ? null : toBase64(fileHigh),
-          isVideoLow  ? null : toBase64(fileLow),
+          isVideoHigh ? null : compressImage(fileHigh),
+          isVideoLow  ? null : compressImage(fileLow),
         ])
 
         body = {
@@ -119,8 +119,8 @@ export default function App() {
           durationLow:   uploadLow?.duration    ?? null,
           base64High:    b64High,
           base64Low:     b64Low,
-          mediaTypeHigh: fileHigh.type,
-          mediaTypeLow:  fileLow.type,
+          mediaTypeHigh: isVideoHigh ? fileHigh.type : 'image/jpeg',
+          mediaTypeLow:  isVideoLow  ? fileLow.type  : 'image/jpeg',
         }
       } catch (err) {
         setError('업로드 오류: ' + err.message)
@@ -128,13 +128,16 @@ export default function App() {
         return
       }
     } else {
-      // ── 이미지: 기존 flow ─────────────────────────────────────────────────
-      const [dataHigh, dataLow] = await Promise.all([toBase64(fileHigh), toBase64(fileLow)])
+      // ── 이미지: Canvas 압축 후 전송 (최대 1280px / 1MB JPEG) ────────────
+      const [dataHigh, dataLow] = await Promise.all([
+        compressImage(fileHigh),
+        compressImage(fileLow),
+      ])
       body = {
         imageHigh:    dataHigh,
         imageLow:     dataLow,
-        mediaTypeHigh: fileHigh.type || 'image/jpeg',
-        mediaTypeLow:  fileLow.type  || 'image/jpeg',
+        mediaTypeHigh: 'image/jpeg',
+        mediaTypeLow:  'image/jpeg',
       }
     }
 

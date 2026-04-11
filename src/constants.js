@@ -35,3 +35,43 @@ export function toBase64(file) {
     reader.readAsDataURL(file);
   });
 }
+
+// Canvas로 이미지를 최대 1280px / 최대 1MB JPEG로 압축 후 base64 반환
+export function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const img    = new Image();
+    const objUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objUrl);
+
+      const MAX_DIM = 1280;
+      let { naturalWidth: w, naturalHeight: h } = img;
+
+      if (w > MAX_DIM || h > MAX_DIM) {
+        if (w >= h) { h = Math.round(h * MAX_DIM / w); w = MAX_DIM; }
+        else        { w = Math.round(w * MAX_DIM / h); h = MAX_DIM; }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+
+      // 1MB 이하가 될 때까지 품질 낮춤 (base64 len * 0.75 ≈ 바이트)
+      const MAX_BYTES = 1_048_576; // 1 MB
+      let quality  = 0.8;
+      let dataUrl  = canvas.toDataURL('image/jpeg', quality);
+
+      while ((dataUrl.length - 23) * 0.75 > MAX_BYTES && quality > 0.3) {
+        quality  = parseFloat((quality - 0.1).toFixed(1));
+        dataUrl  = canvas.toDataURL('image/jpeg', quality);
+      }
+
+      resolve(dataUrl.split(',')[1]);
+    };
+
+    img.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error('이미지 로드 실패')); };
+    img.src = objUrl;
+  });
+}
