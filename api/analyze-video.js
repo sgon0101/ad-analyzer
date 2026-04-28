@@ -49,8 +49,45 @@ async function buildPart(base64Data, mimeType, apiKey) {
     await waitForFileActive(file.name, apiKey)
     return { fileData: { mimeType, fileUri: file.uri } }
   }
-  // 이미지/GIF: 인라인 전송
   return { inlineData: { mimeType, data: base64Data } }
+}
+
+// ── JSON 문자열 내 이스케이프 안된 큰따옴표 복구 ───────────────────────────
+// 예: {"key": "값에 "따옴표" 포함"} → {"key": "값에 \"따옴표\" 포함"}
+function repairEmbeddedQuotes(raw) {
+  let result = ''
+  let inString = false
+  let i = 0
+  while (i < raw.length) {
+    const ch = raw[i]
+    // 이스케이프 시퀀스는 그대로 통과
+    if (ch === '\\' && inString) {
+      result += ch + (raw[i + 1] || '')
+      i += 2
+      continue
+    }
+    if (ch === '"') {
+      if (!inString) {
+        inString = true
+        result += '"'
+      } else {
+        // 다음 의미 있는 문자가 JSON 구조 문자이면 닫는 따옴표, 아니면 내부 따옴표
+        let j = i + 1
+        while (j < raw.length && (raw[j] === ' ' || raw[j] === '\t')) j++
+        const next = raw[j]
+        if (next === ':' || next === ',' || next === '}' || next === ']' || j >= raw.length) {
+          inString = false
+          result += '"'
+        } else {
+          result += '\\"'
+        }
+      }
+    } else {
+      result += ch
+    }
+    i++
+  }
+  return result
 }
 
 // ── JSON 안전 파싱 ──────────────────────────────────────────────────────────
@@ -69,7 +106,13 @@ function safeParseJSON(text) {
   }
   raw = raw.slice(start, end + 1)
 
-  return JSON.parse(raw)
+  // 4) 직접 파싱 시도
+  try {
+    return JSON.parse(raw)
+  } catch {
+    // 5) 문자열 내 이스케이프 안된 큰따옴표 복구 후 재시도
+    return JSON.parse(repairEmbeddedQuotes(raw))
+  }
 }
 
 // ── Gemini API 호출 (재시도 포함) ──────────────────────────────────────────
@@ -93,13 +136,20 @@ async function callGemini(parts, systemPrompt, userPrompt, apiKey, attempt = 1) 
   const geminiData = await geminiRes.json()
   if (!geminiRes.ok) throw new Error(geminiData.error?.message || `Gemini API 오류 (${geminiRes.status})`)
 
-  const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || ''
+  const candidate  = geminiData.candidates?.[0]
+  const finishReason = candidate?.finishReason
+
+  // 토큰 한도 초과로 응답이 잘린 경우 — 재시도해도 동일하므로 즉시 에러
+  if (finishReason === 'MAX_TOKENS') {
+    throw new Error('AI 응답이 토큰 한도로 잘렸어요. 잠시 후 다시 시도해 주세요.')
+  }
+
+  const rawText = candidate?.content?.parts?.[0]?.text || ''
 
   try {
     return safeParseJSON(rawText)
   } catch (parseErr) {
     if (attempt < 3) {
-      // 파싱 실패 시 최대 2회 재시도
       return callGemini(parts, systemPrompt, userPrompt, apiKey, attempt + 1)
     }
     throw new Error(`JSON 파싱 실패 (${attempt}회 시도): ${parseErr.message}`)
@@ -119,7 +169,6 @@ export default async function handler(req, res) {
     const isVideoHigh = mediaTypeHigh?.startsWith('video/')
     const isVideoLow  = mediaTypeLow?.startsWith('video/')
 
-    // 영상 파일은 병렬 업로드 (이미지는 즉시 인라인 처리)
     const [partHigh, partLow] = await Promise.all([
       buildPart(fileHigh, mediaTypeHigh || 'image/jpeg', apiKey),
       buildPart(fileLow,  mediaTypeLow  || 'image/jpeg', apiKey),

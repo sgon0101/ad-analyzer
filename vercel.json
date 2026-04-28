@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/analyze-video.js": {
-      "maxDuration": 60
+      "maxDuration": 120
     },
     "api/analyze-video-cloudinary.js": {
       "maxDuration": 120
